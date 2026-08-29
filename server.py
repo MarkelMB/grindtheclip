@@ -2450,19 +2450,52 @@ def resolve_room_code(code):
     return jsonify({"found": False}), 404
 
 
+def launch_desktop_window():
+    url = "http://127.0.0.1:5000"
+    
+    # 1. Try pywebview
+    try:
+        import webview
+        webview.create_window('GrindTheClip 🎬', url, width=1280, height=780, resizable=True)
+        webview.start()
+        return
+    except Exception as e:
+        print(f"[GUI] pywebview no disponible ({e}). Probando modo Edge App...")
+
+    # 2. Try Microsoft Edge App Mode (Native standalone window on Windows 10/11)
+    try:
+        edge_paths = [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+        ]
+        for ep in edge_paths:
+            if os.path.exists(ep):
+                subprocess.Popen([ep, f"--app={url}"])
+                return
+    except Exception as e:
+        print(f"[GUI] Edge App Mode warning: {e}")
+
+    # 3. Universal Fallback to default system browser
+    import webbrowser
+    webbrowser.open(url)
+
 if __name__ == '__main__':
     use_gui = '--no-gui' not in sys.argv
     if use_gui:
+        server_thread = threading.Thread(
+            target=socketio.run,
+            args=(app,),
+            kwargs={'host': '0.0.0.0', 'port': 5000, 'debug': False, 'allow_unsafe_werkzeug': True},
+            daemon=True
+        )
+        server_thread.start()
+        time.sleep(1.0)
+        launch_desktop_window()
+        # Keep main thread alive if using Edge/webbrowser
         try:
-            import webview
-            server_thread = threading.Thread(target=socketio.run, args=(app,), kwargs={'host': '0.0.0.0', 'port': 5000, 'debug': False, 'allow_unsafe_werkzeug': True}, daemon=True)
-            server_thread.start()
-            time.sleep(1.2)
-            webview.create_window('GrindTheClip 🎬', 'http://127.0.0.1:5000', width=1280, height=780, resizable=True)
-            webview.start()
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
             sys.exit(0)
-        except Exception as e:
-            print(f"pywebview GUI launcher warning: {e}. Starting standard server mode.")
-            socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
     else:
         socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
