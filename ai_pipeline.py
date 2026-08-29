@@ -17,6 +17,33 @@ import imageio_ffmpeg
 os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
+CONFIG_GEMINI_FILE = os.path.join(os.path.dirname(__file__), "gemini_config.json")
+
+def get_gemini_api_key():
+    key = os.getenv("GEMINI_API_KEY")
+    if key and key.strip():
+        return key.strip()
+    if os.path.exists(CONFIG_GEMINI_FILE):
+        try:
+            with open(CONFIG_GEMINI_FILE, "r") as f:
+                data = json.load(f)
+                k = data.get("gemini_api_key", "").strip()
+                if k:
+                    return k
+        except Exception:
+            pass
+    return ""
+
+def set_gemini_api_key(key):
+    key = key.strip()
+    os.environ["GEMINI_API_KEY"] = key
+    try:
+        with open(CONFIG_GEMINI_FILE, "w") as f:
+            json.dump({"gemini_api_key": key}, f, indent=2)
+    except Exception:
+        pass
+    return True
+
 # Gemini Client Setup
 GEMINI_AVAILABLE = False
 client = None
@@ -24,13 +51,13 @@ client = None
 try:
     from google import genai
     from google.genai import types
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    gemini_key = get_gemini_api_key()
     if gemini_key:
         client = genai.Client(api_key=gemini_key)
         GEMINI_AVAILABLE = True
         logging.info("Gemini SDK cargado correctamente.")
     else:
-        logging.warning("GEMINI_API_KEY no encontrada en .env")
+        logging.warning("GEMINI_API_KEY no configurada.")
 except Exception as e:
     logging.warning(f"Error inicializando Gemini SDK: {e}")
 
@@ -481,9 +508,9 @@ def transcribe_and_diarize_with_gemini(video_path):
     except ImportError:
         raise ImportError("Falta instalar google-genai. Ejecuta: pip install google-genai")
     
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_gemini_api_key()
     if not api_key:
-        raise ValueError("GEMINI_API_KEY no encontrada en .env")
+        raise ValueError("No se ha configurado ninguna Clave API de Gemini. Por favor, introduce tu Clave API en el Taller de Escenas.")
         
     client = genai.Client(api_key=api_key)
     

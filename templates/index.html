@@ -681,7 +681,29 @@
     <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
     <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
     
+    <!-- GEMINI API KEY MODAL -->
+    <div id="gemini-key-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 999999; align-items: center; justify-content: center; padding: 20px;">
+        <div class="creator-card" style="background: rgba(15,18,25,0.95); border: 2px solid var(--cyan); box-shadow: 0 0 40px rgba(0,229,255,0.25); max-width: 500px; width: 100%; padding: 35px; border-radius: 20px; text-align: center;">
+            <h2 style="color: var(--cyan); margin-bottom: 10px; font-size: 1.6rem;">🔑 Clave API de Gemini Requerida</h2>
+            <p style="color: #ccc; font-size: 0.95rem; line-height: 1.5; margin-bottom: 25px;">Para que la Inteligencia Artificial transcriba diálogos y separe las voces del vídeo automáticamente en este ordenador, se necesita una Clave API de Google Gemini (es 100% gratuita).</p>
+            
+            <div style="margin-bottom: 25px; text-align: left;">
+                <label style="color: var(--cyan); font-size: 0.85rem; font-weight: bold; display: block; margin-bottom: 6px;">Introduce tu Clave API de Gemini:</label>
+                <input type="password" id="gemini-key-input" placeholder="AIzaSy..." style="width: 100%; padding: 14px; background: #161b22; color: #fff; border: 1px solid var(--cyan); border-radius: 8px; font-size: 1rem;">
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+                <button onclick="saveGeminiKeyFromModal()" class="btn-pill btn-cyan" style="flex: 1; padding: 14px; font-weight: bold; font-size: 1rem; background: linear-gradient(135deg, #00e676, #00bcd4); color: #000;">💾 Guardar y Procesar</button>
+                <button onclick="document.getElementById('gemini-key-modal').style.display='none'" class="btn-pill btn-white" style="padding: 14px 20px; font-size: 0.9rem;">Cancelar</button>
+            </div>
+
+            <p style="margin: 0; font-size: 0.85rem;">
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #00e5ff; text-decoration: underline;">🔑 Conseguir Clave API Gratis en Google AI Studio (1 clic)</a>
+            </p>
+        </div>
+    </div>
+
     <!-- Archivo principal de lógica -->
-    <script src="{{ url_for('static', filename='app.js') }}?v=127"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=128"></script>
 </body>
 </html>

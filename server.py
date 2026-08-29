@@ -155,18 +155,20 @@ def api_editor_load_media():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-import cloud_sync
+@app.route('/api/check_gemini_key', methods=['GET'])
+def check_gemini_key():
+    key = ai_pipeline.get_gemini_api_key()
+    return jsonify({"has_key": bool(key)})
 
-@app.route('/api/setup_supabase', methods=['POST'])
-def setup_supabase():
+@app.route('/api/save_gemini_key', methods=['POST'])
+def save_gemini_key():
     try:
         data = request.get_json() or {}
-        url = data.get('url', '')
-        key = data.get('key', '')
-        if url and key:
-            cloud_sync.configure_supabase(url, key)
-            return jsonify({"success": True, "message": "Supabase configurado correctamente"})
-        return jsonify({"error": "Falta URL o Key"}), 400
+        key = data.get('api_key', '').strip()
+        if key:
+            ai_pipeline.set_gemini_api_key(key)
+            return jsonify({"success": True, "message": "Clave API guardada correctamente"})
+        return jsonify({"error": "Clave API inválida"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

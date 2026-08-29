@@ -2865,7 +2865,40 @@ const CHAR_COLORS = ['#6c8cff','#e5636b','#4caf7d','#d9a441','#c471ed','#41c7d9'
 
 
 
+async function saveGeminiKeyFromModal() {
+    const input = document.getElementById('gemini-key-input').value.trim();
+    if (!input) { alert("Por favor introduce una Clave API válida."); return; }
+    try {
+        const res = await fetch('/api/save_gemini_key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: input })
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('gemini-key-modal').style.display = 'none';
+            document.getElementById('btn-auto-create').click();
+        } else {
+            alert(data.error || "No se pudo guardar la clave API.");
+        }
+    } catch(e) {
+        alert("Error guardando Clave API: " + e.message);
+    }
+}
+
 document.getElementById('btn-auto-create').onclick = async () => {
+    // Check if Gemini API key exists
+    try {
+        const rKey = await fetch('/api/check_gemini_key');
+        const dKey = await rKey.json();
+        if (!dKey.has_key) {
+            document.getElementById('gemini-key-modal').style.display = 'flex';
+            return;
+        }
+    } catch(e) {
+        console.warn("Could not check gemini key:", e);
+    }
+
     const packName = document.getElementById('auto-pack-name').value.trim();
     const videoFile = document.getElementById('auto-video-upload').files[0];
     const youtubeUrl = document.getElementById('auto-youtube-url').value.trim();
