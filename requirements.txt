@@ -6,4 +6,6 @@ numpy
 librosa
 soundfile
 imageio-ffmpeg
+google-genai
+yt-dlp
 requests

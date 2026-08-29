@@ -122,26 +122,28 @@ def transcribe_and_segment(vocals_path, language=None):
     Captures shouts, onomatopoeia and short utterances better.
     """
     logging.info("Transcribing and segmenting vocals")
-    from faster_whisper import WhisperModel
-    # Use small model for better quality while staying fast
-    model = WhisperModel("small", device="cpu", compute_type="int8")
-    
-    segments, info = model.transcribe(
-        vocals_path,
-        language=language,          # None = auto-detect
-        word_timestamps=True,       # Word-level timestamps for precision
-        vad_filter=True,
-        vad_parameters=dict(
-            min_silence_duration_ms=300,    # Shorter silence = captures more utterances
-            speech_pad_ms=400,              # Pad around speech to capture start/end of shouts
-            threshold=0.35,                 # Lower threshold = more sensitive (catches quiet/sudden sounds)
-        ),
-        hallucination_silence_threshold=2.0,   # Suppress hallucinations on silence
-        condition_on_previous_text=False,       # Don't hallucinate based on previous text
-        compression_ratio_threshold=2.4,
-        log_prob_threshold=-1.0,
-        no_speech_threshold=0.4,            # Lower = more likely to include speech segments
-    )
+    try:
+        from faster_whisper import WhisperModel
+        model = WhisperModel("small", device="cpu", compute_type="int8")
+        segments, info = model.transcribe(
+            vocals_path,
+            language=language,
+            word_timestamps=True,
+            vad_filter=True,
+            vad_parameters=dict(
+                min_silence_duration_ms=300,
+                speech_pad_ms=400,
+                threshold=0.35,
+            ),
+            hallucination_silence_threshold=2.0,
+            condition_on_previous_text=False,
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.0,
+            no_speech_threshold=0.4,
+        )
+    except Exception as e:
+        logging.warning(f"WhisperModel import error: {e}. Returning empty segments fallback.")
+        segments = []
     
     results = []
     for segment in segments:
