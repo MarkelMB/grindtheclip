@@ -2402,6 +2402,7 @@ def start_tunnel():
 
 # Central Room Registry for Cross-Network Room Code Joining
 ROOM_REGISTRY = {} # code -> { url: str, pack_name: str, created_at: float }
+RENDER_CLOUD_SERVER = "https://grindtheclip.onrender.com"
 
 @app.route('/api/register_room_code', methods=['POST'])
 def register_room_code():
@@ -2416,11 +2417,11 @@ def register_room_code():
                 'pack_name': pack_name,
                 'created_at': time.time()
             }
-            # Also attempt registering to global cloud registry if available
+            # Also attempt registering to global Render cloud registry if available
             try:
                 import urllib.request
                 req_data = json.dumps({'code': code, 'url': url, 'pack_name': pack_name}).encode('utf-8')
-                req = urllib.request.Request('https://kvdb.io/4y2ZfX1G9q2wK9m2tP9v2c/room_' + code, data=req_data, headers={'Content-Type': 'application/json'}, method='PUT')
+                req = urllib.request.Request(f"{RENDER_CLOUD_SERVER}/api/register_room_code", data=req_data, headers={'Content-Type': 'application/json'}, method='POST')
                 urllib.request.urlopen(req, timeout=3)
             except Exception:
                 pass
@@ -2436,14 +2437,15 @@ def resolve_room_code(code):
         reg = ROOM_REGISTRY[code]
         return jsonify({"found": True, "url": reg['url'], "pack_name": reg['pack_name']})
     
-    # Check cloud registry
+    # Check Render cloud registry
     try:
         import urllib.request
-        req = urllib.request.Request('https://kvdb.io/4y2ZfX1G9q2wK9m2tP9v2c/room_' + code, headers={'Accept': 'application/json'}, method='GET')
+        req = urllib.request.Request(f"{RENDER_CLOUD_SERVER}/api/resolve_room_code/{code}", headers={'Accept': 'application/json'}, method='GET')
         with urllib.request.urlopen(req, timeout=3) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode('utf-8'))
-                return jsonify({"found": True, "url": data.get('url'), "pack_name": data.get('pack_name', '')})
+                if data.get('found'):
+                    return jsonify({"found": True, "url": data.get('url'), "pack_name": data.get('pack_name', '')})
     except Exception:
         pass
         
@@ -2453,29 +2455,50 @@ def resolve_room_code(code):
 def launch_desktop_window():
     url = "http://127.0.0.1:5000"
     
-    # 1. Try pywebview
-    try:
-        import webview
-        webview.create_window('GrindTheClip 🎬', url, width=1280, height=780, resizable=True)
-        webview.start()
-        return
-    except Exception as e:
-        print(f"[GUI] pywebview no disponible ({e}). Probando modo Edge App...")
-
-    # 2. Try Microsoft Edge App Mode (Native standalone window on Windows 10/11)
+    # 1. Try Microsoft Edge App Mode (Standalone borderless window on Windows 10/11 - 100% pre-installed)
     try:
         edge_paths = [
             r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe")
         ]
         for ep in edge_paths:
             if os.path.exists(ep):
-                subprocess.Popen([ep, f"--app={url}"])
+                print(f"[GUI] Iniciando en modo Edge App: {ep}")
+                profile_dir = os.path.join(os.environ.get('TEMP', 'C:\\Temp'), 'GTC_EdgeProfile')
+                subprocess.Popen([
+                    ep,
+                    f"--app={url}",
+                    "--window-size=1280,780",
+                    f"--user-data-dir={profile_dir}"
+                ])
                 return
     except Exception as e:
         print(f"[GUI] Edge App Mode warning: {e}")
 
+    # 2. Try Google Chrome App Mode
+    try:
+        chrome_paths = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
+        ]
+        for cp in chrome_paths:
+            if os.path.exists(cp):
+                print(f"[GUI] Iniciando en modo Chrome App: {cp}")
+                profile_dir = os.path.join(os.environ.get('TEMP', 'C:\\Temp'), 'GTC_ChromeProfile')
+                subprocess.Popen([
+                    cp,
+                    f"--app={url}",
+                    "--window-size=1280,780",
+                    f"--user-data-dir={profile_dir}"
+                ])
+                return
+    except Exception as e:
+        print(f"[GUI] Chrome App Mode warning: {e}")
+
     # 3. Universal Fallback to default system browser
+    print("[GUI] Abriendo navegador predeterminado...")
     import webbrowser
     webbrowser.open(url)
 
