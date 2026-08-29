@@ -1,18 +1,30 @@
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import time
 import json
 import warnings
 import threading
 import uuid
 from flask import Flask, render_template, request, jsonify, send_from_directory
-import numpy as np
-import librosa
-import soundfile as sf
+from flask_socketio import SocketIO, join_room, leave_room, emit
+try:
+    import numpy as np
+except Exception as _e:
+    print(f"[Warning] numpy import warning: {_e}")
+    np = None
+
+try:
+    import librosa
+    import soundfile as sf
+except Exception as _e:
+    print(f"[Warning] Audio scoring module import warning: {_e}")
+    librosa = None
+    sf = None
 import io
 import shutil
 from werkzeug.utils import secure_filename
 import ai_pipeline
-from flask_socketio import SocketIO, join_room, leave_room, emit
 
 warnings.filterwarnings('ignore', category=UserWarning)
 
@@ -24,10 +36,59 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['SECRET_KEY'] = 'grindtheclip_secret'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# State for multiplayer
-rooms = {}
+# ==============================================================================
+# ROOM & STATE MANAGER (Re-architected Modular Room State)
+# ==============================================================================
 
-PACKS_DIR = r"C:\Users\marke\AppData\Roaming\YeahMaybe\ChoicerVoicer\game\packs_voice"
+class RoomManager:
+    """Centralized manager for room state, players, modes, and votes."""
+    def __init__(self):
+        self.rooms = {}
+
+    def create_room(self, code, pack_name, mode='cooperativo', scoring_mode='ia'):
+        code = code.upper()
+        self.rooms[code] = {
+            "code": code,
+            "pack_name": pack_name,
+            "mode": mode,
+            "scoring_mode": scoring_mode,
+            "score_sensitivity": "normal",
+            "playback_mode": "premiere",
+            "state": "waiting",
+            "players": {},
+            "characters": {},
+            "coop_data": {},
+            "comp_data": {},
+            "votes": {}
+        }
+        return self.rooms[code]
+
+    def get_room(self, code):
+        if not code:
+            return None
+        return self.rooms.get(code.upper())
+
+    def get_room_state(self, code):
+        r = self.get_room(code)
+        if not r:
+            return None
+        return {
+            "code": r["code"],
+            "pack_name": r["pack_name"],
+            "mode": r["mode"],
+            "scoring_mode": r.get("scoring_mode", "ia"),
+            "score_sensitivity": r.get("score_sensitivity", "normal"),
+            "playback_mode": r.get("playback_mode", "premiere"),
+            "state": r["state"],
+            "players": list(r["players"].values()),
+            "characters": r["characters"]
+        }
+
+room_mgr = RoomManager()
+rooms = room_mgr.rooms
+
+user_appdata = os.getenv('APPDATA') or os.path.expanduser('~')
+PACKS_DIR = os.path.join(user_appdata, 'YeahMaybe', 'ChoicerVoicer', 'game', 'packs_voice')
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(PACKS_DIR, exist_ok=True)
@@ -36,6 +97,8 @@ os.makedirs(PACKS_DIR, exist_ok=True)
 creator_jobs = {}
 
 def extract_features(y, sr, n_mfcc=8):
+    if librosa is None:
+        return np.zeros(10), np.zeros(10, dtype=bool), np.zeros(10), np.zeros((n_mfcc, 10))
     f0, voiced_flag, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'), sr=sr)
     rms = librosa.feature.rms(y=y)[0]
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
@@ -347,10 +410,27 @@ def get_packs():
     if not os.path.exists(PACKS_DIR):
         return jsonify({"error": "Directory not found"}), 404
         
+    requested_user = request.args.get('user', '').strip().lower()
+    
     packs = []
     for item in os.listdir(PACKS_DIR):
         item_path = os.path.join(PACKS_DIR, item)
         if os.path.isdir(item_path):
+            owner_file = os.path.join(item_path, "_owner.json")
+            pack_owner = None
+            if os.path.exists(owner_file):
+                try:
+                    with open(owner_file, "r", encoding="utf-8") as f:
+                        pack_owner = json.load(f).get("owner", "").strip().lower()
+                except Exception:
+                    pass
+            
+            # Personal Catalog Filtering:
+            # If pack has an owner tag, only show it if the requested user is the owner!
+            # Built-in default packs (no owner tag) show in everyone's catalog.
+            if pack_owner and requested_user and pack_owner != requested_user:
+                continue
+
             icon_url = None
             if os.path.exists(os.path.join(item_path, "icon.png")):
                 icon_url = f"/media/{item}/icon.png"
@@ -364,7 +444,8 @@ def get_packs():
                         
             packs.append({
                 "name": item,
-                "icon_url": icon_url
+                "icon_url": icon_url,
+                "owner": pack_owner
             })
     return jsonify(packs)
 
@@ -832,7 +913,7 @@ def mix_competitive_video_thread(room, player_name, player_sid, pack_name, playe
         if has_video and os.path.exists(output_audio):
             cmd2 = [ffmpeg_exe, "-y", "-i", original_video, "-i", output_audio,
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-c:a", "aac",
-                    "-map", "0:v:0", "-map", "1:a:0", final_video]
+                    "-map", "0:v?", "-map", "1:a?", "-shortest", final_video]
             try:
                 result2 = subprocess.run(cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=FFMPEG_TIMEOUT)
                 if result2.returncode == 0 and os.path.exists(final_video):
@@ -880,7 +961,10 @@ def mix_competitive_video_thread(room, player_name, player_sid, pack_name, playe
 # MULTIPLAYER COOP MIXING
 # ==========================================
 import threading
-import imageio_ffmpeg
+try:
+    import imageio_ffmpeg
+except Exception:
+    imageio_ffmpeg = None
 import json
 
 def mix_coop_video_thread(room, pack_name):
@@ -978,7 +1062,7 @@ def mix_coop_video_thread(room, pack_name):
             
         final_video = os.path.join(room_dir, "final_video.mp4")
         if os.path.exists(original_video):
-            cmd2 = [ffmpeg_exe, "-y", "-i", original_video, "-i", output_audio, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0", final_video]
+            cmd2 = [ffmpeg_exe, "-y", "-i", original_video, "-i", output_audio, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-c:a", "aac", "-map", "0:v?", "-map", "1:a?", "-shortest", final_video]
             subprocess.run(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             vid_url = f"/uploads/room_{room}/{os.path.basename(final_video)}"
         else:
@@ -1221,7 +1305,7 @@ def singleplayer_mix():
 
         final_video = os.path.join(job_dir, "final_video.mp4")
         if os.path.exists(original_video):
-            cmd2 = [ffmpeg_exe, "-y", "-i", original_video, "-i", output_audio, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0", final_video]
+            cmd2 = [ffmpeg_exe, "-y", "-i", original_video, "-i", output_audio, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-c:a", "aac", "-map", "0:v?", "-map", "1:a?", "-shortest", final_video]
             subprocess.run(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             vid_url = f"/uploads/singleplayer_{job_id[:8]}/final_video.mp4"
         else:
@@ -1682,10 +1766,7 @@ def check_room(code):
         return jsonify({"valid": False, "reason": "Sala no encontrada"})
     if rooms[code]['state'] != 'waiting':
         return jsonify({"valid": False, "reason": "La partida ya ha empezado"})
-    max_p = rooms[code].get("max_players") or get_pack_character_count(rooms[code]["pack_name"])
-    curr_p = len(rooms[code]["players"])
-    if curr_p >= max_p:
-        return jsonify({"valid": False, "reason": f"La sala está llena (Máximo {max_p} jugadores para esta escena)"})
+    max_p = get_pack_character_count(rooms[code]["pack_name"])
     return jsonify({"valid": True, "pack_name": rooms[code]['pack_name'], "mode": rooms[code].get("mode", "competitivo"), "max_players": max_p})
 
 @app.route('/api/upload_coop_clips', methods=['POST'])
@@ -1712,6 +1793,49 @@ def upload_coop_clips():
     # We find the host (the first player in the room is usually the host, but let's just broadcast to the room, the host can filter it)
     socketio.emit('player_clips_ready', {"sid": sid, "clip_urls": clip_urls}, to=room)
     return jsonify({"success": True})
+
+@app.route('/api/upload_single_take', methods=['POST'])
+def upload_single_take():
+    room = request.form.get('room', '').upper()
+    sid = request.form.get('sid')
+    player_name = request.form.get('player_name', '')
+    clip_name = request.form.get('clip_name', '')
+    file = request.files.get('audio')
+    
+    if not file or not clip_name:
+        return jsonify({"error": "Missing audio or clip_name"}), 400
+        
+    upload_subdir = f"room_{room}" if room else "singleplayer_temp"
+    target_dir = os.path.join(app.config['UPLOAD_FOLDER'], upload_subdir)
+    os.makedirs(target_dir, exist_ok=True)
+    
+    safe_clip = os.path.basename(clip_name)
+    save_filename = f"{sid or 'local'}_{safe_clip}"
+    if not save_filename.endswith('.webm') and not save_filename.endswith('.wav'):
+        save_filename += '.webm'
+        
+    filepath = os.path.join(target_dir, save_filename)
+    file.save(filepath)
+    
+    url = f"/uploads/{upload_subdir}/{save_filename}"
+    
+    if room and room in rooms:
+        if 'coop_data' in rooms[room]:
+            p_clips = rooms[room]['coop_data'].setdefault('player_clips', {}).setdefault(player_name or sid, [])
+            existing = next((c for c in p_clips if c.get('name') == clip_name), None)
+            if existing:
+                existing['file'] = filepath
+                existing['url'] = url
+            else:
+                p_clips.append({'name': clip_name, 'file': filepath, 'url': url})
+        
+        socketio.emit('take_uploaded_progress', {
+            'player_name': player_name,
+            'clip_name': clip_name,
+            'url': url
+        }, to=room)
+        
+    return jsonify({"success": True, "url": url, "filename": save_filename})
 
 @app.route('/api/upload_coop_video', methods=['POST'])
 def upload_coop_video():
@@ -1749,11 +1873,6 @@ def on_join(data):
         
     if rooms[room]['state'] != 'waiting' and not existing_player:
         emit('error', {'message': 'La partida ya ha empezado'})
-        return
-
-    max_p = rooms[room].get("max_players") or get_pack_character_count(rooms[room]["pack_name"])
-    if not existing_player and len(rooms[room]['players']) >= max_p:
-        emit('error', {'message': f'La sala está llena (Máximo {max_p} jugadores para esta escena)'})
         return
         
     join_room(room)
@@ -1803,6 +1922,20 @@ def on_toggle_ready(data):
         # Check if everyone is ready
         all_ready = all(p["ready"] for p in rooms[room]["players"].values())
         if all_ready and len(rooms[room]["players"]) > 0:
+            total_players = len(rooms[room]["players"])
+            pack_name = rooms[room].get("pack_name", "")
+            num_chars = get_pack_character_count(pack_name)
+
+            if mode == 'cooperativo' and total_players > num_chars:
+                print(f"[{room}] Coop start blocked: {total_players} players in room, but scene has {num_chars} characters.")
+                for p in rooms[room]["players"].values():
+                    p["ready"] = False
+                socketio.emit('mode_capacity_error', {
+                    'message': f'⚠️ En Modo Cooperativo sólo pueden participar {num_chars} personas a la vez (tantos como personajes hay en la escena). Hay {total_players} personas en la sala.\n\n👉 Cambiad a Modo Competitivo para jugar todos juntos sin ningún límite.'
+                }, to=room)
+                emit('room_update', get_room_state(room), to=room)
+                return
+
             print(f"[{room}] Everyone is ready! Starting game in 3 seconds...")
             rooms[room]['state'] = 'playing'
             rooms[room]['votes'] = {}

@@ -8,14 +8,18 @@ import time
 import uuid
 from pathlib import Path
 import shutil
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.expanduser("~"), ".env"))
+except Exception:
+    pass
 
-load_dotenv(os.path.join(os.path.expanduser("~"), ".env"))
-
-# Provide a portable ffmpeg via imageio-ffmpeg
-import imageio_ffmpeg
-os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
-os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+try:
+    import imageio_ffmpeg
+    os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
+    os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+except Exception:
+    pass
 
 CONFIG_GEMINI_FILE = os.path.join(os.path.dirname(__file__), "gemini_config.json")
 

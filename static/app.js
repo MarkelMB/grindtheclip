@@ -217,7 +217,7 @@ async function handleAuthSubmit(event, type) {
                 return;
             }
         } else {
-            // Local mode: check stored account or auto-create seamlessly
+            // Local mode: check stored account
             const localAccount = getLocalAccount(email);
             if (localAccount) {
                 if (localAccount.password && localAccount.password !== password) {
@@ -229,10 +229,11 @@ async function handleAuthSubmit(event, type) {
                 }
                 currentUserProfile = { nickname: localAccount.nickname, email: email };
             } else {
-                const autoNick = email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '') || 'Jugador';
-                const cleanNick = validateNickname(autoNick).valid ? autoNick : ('Jugador_' + Math.floor(100 + Math.random()*900));
-                saveLocalAccount(email, password, cleanNick);
-                currentUserProfile = { nickname: cleanNick, email: email };
+                if (errBanner) {
+                    errBanner.innerText = 'Este usuario/correo no está registrado. Por favor, haz clic en Registrase primero.';
+                    errBanner.style.display = 'block';
+                }
+                return;
             }
             saveLocalUserSession(currentUserProfile);
             setLoggedInUser(currentUserProfile);
@@ -952,6 +953,99 @@ if (typeof window !== 'undefined') {
 function startAfkChecker() {}
 function stopAfkChecker() {}
 
+// ReDub Feature: Instant Background Upload of takes
+async function uploadSingleTakeInBackground(clipIndex, audioBlob) {
+    if (!audioBlob || !currentRoom || !clipsList[clipIndex]) return;
+    const clip = clipsList[clipIndex];
+    const clipName = clip.name || clip.file || `clip_${clipIndex}.wav`;
+    
+    const formData = new FormData();
+    formData.append('room', currentRoom);
+    formData.append('sid', socket ? socket.id : '');
+    formData.append('player_name', myName || '');
+    formData.append('clip_name', clipName);
+    formData.append('audio', audioBlob, `take_${clipIndex}.wav`);
+    
+    try {
+        console.log(`[BACKGROUND UPLOAD] Uploading take for clip ${clipName}...`);
+        await fetch('/api/upload_single_take', {
+            method: 'POST',
+            body: formData
+        });
+        console.log(`[BACKGROUND UPLOAD] Take for clip ${clipName} uploaded successfully!`);
+    } catch(e) {
+        console.warn(`[BACKGROUND UPLOAD] Error uploading take for ${clipName}:`, e);
+    }
+}
+
+// ReDub Feature: Live Mic Volume Meter (AudioContext + AnalyserNode)
+let _micAudioContext = null;
+let _micAnalyser = null;
+let _micStream = null;
+let _micAnimFrame = null;
+
+async function initMicVUMeter() {
+    const statusLabel = document.getElementById('mic-status-label');
+    const barFill = document.getElementById('vu-meter-bar-fill');
+    if (!statusLabel || !barFill) return;
+
+    try {
+        if (!_micStream) {
+            _micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
+        
+        if (!_micAudioContext) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            _micAudioContext = new AudioCtx();
+            const source = _micAudioContext.createMediaStreamSource(_micStream);
+            _micAnalyser = _micAudioContext.createAnalyser();
+            _micAnalyser.fftSize = 128;
+            source.connect(_micAnalyser);
+        }
+
+        if (_micAudioContext.state === 'suspended') {
+            await _micAudioContext.resume();
+        }
+
+        const dataArray = new Uint8Array(_micAnalyser.frequencyBinCount);
+        
+        function updateMeter() {
+            if (!_micAnalyser) return;
+            _micAnalyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            let average = sum / dataArray.length;
+            let percent = Math.min(100, Math.round((average / 128) * 100 * 1.5));
+            
+            if (barFill) {
+                barFill.style.width = percent + '%';
+            }
+            if (statusLabel) {
+                if (percent > 5) {
+                    statusLabel.innerText = "🟢 Detectando voz (" + percent + "%)";
+                    statusLabel.style.color = "#00e676";
+                } else {
+                    statusLabel.innerText = "⚪ Micro listo (Silencio)";
+                    statusLabel.style.color = "#aaa";
+                }
+            }
+            _micAnimFrame = requestAnimationFrame(updateMeter);
+        }
+
+        if (_micAnimFrame) cancelAnimationFrame(_micAnimFrame);
+        updateMeter();
+
+    } catch (err) {
+        console.warn("[MIC VU] Could not access microphone:", err);
+        if (statusLabel) {
+            statusLabel.innerText = "⚠️ Permitir micro en el navegador";
+            statusLabel.style.color = "#ff4081";
+        }
+    }
+}
+
 function showView(viewId) {
     currentViewId = viewId;
     if (viewId !== 'view-settings') {
@@ -962,6 +1056,9 @@ function showView(viewId) {
     document.getElementById(viewId).classList.add('active');
     if (viewId === 'view-creator-mode') {
         loadRecentProjects();
+    }
+    if (viewId === 'view-lobby' || viewId === 'view-play') {
+        setTimeout(initMicVUMeter, 300);
     }
 }
 
@@ -1000,10 +1097,10 @@ document.getElementById('btn-back-from-packs').onclick = () => {
     }
 };
 
-// 1. Load Packs
 async function loadPacks() {
     try {
-        const res = await fetch('/api/packs?t=' + Date.now());
+        const userQuery = myName ? `&user=${encodeURIComponent(myName)}` : '';
+        const res = await fetch(`/api/packs?t=${Date.now()}${userQuery}`);
         const packs = await res.json();
         
         packsGrid.innerHTML = '';
@@ -1888,6 +1985,11 @@ function playCountdownBeep(isFinal = false) {
                     
                     drawWaveform(originalBuffer, '#bc00ff');
                     drawWaveform(decodedBuffer, '#00ffff', true);
+
+                    // ReDub style: Instant background upload as soon as line recording finishes!
+                    if (isMultiplayer && currentRoom && clipsList[currentClipIndex]) {
+                        uploadSingleTakeInBackground(currentClipIndex, wavBlob || blob);
+                    }
                 } catch(e) {
                     console.warn("Recorded chunk decode error:", e);
                 }
@@ -2537,6 +2639,15 @@ function setupSocket() {
     socket.on('error', (data) => {
         alert(data.message);
     });
+    socket.on('mode_capacity_error', (data) => {
+        alert(data.message);
+    });
+    socket.on('pack_catalog_updated', (data) => {
+        console.log('[REALTIME CATALOG] Catalog updated on server:', data);
+        if (typeof fetchPacks === 'function') {
+            fetchPacks();
+        }
+    });
 }
 
 async function createMultiplayerRoom(packName) {
@@ -2580,7 +2691,14 @@ async function createMultiplayerRoom(packName) {
             .then(r => r.json())
             .then(d => {
                 if (d.url) {
-                    tunnelEl.innerHTML = `🌐 Túnel Online Activo: Código de sala <strong style="color:#00e5ff; font-size:1.2rem;">${currentRoom}</strong> listo para conectar jugadores en la app.`;
+                    const fullLink = d.url;
+                    tunnelEl.innerHTML = `
+                        <div style="background: rgba(0, 229, 255, 0.1); border: 2px solid var(--cyan); border-radius: 12px; padding: 15px; margin-top: 15px; text-align: center;">
+                            <p style="color: #fff; margin-bottom: 8px; font-weight: bold; font-size: 1.1rem;">🌐 SALA ONLINE ACTIVADA</p>
+                            <p style="color: #aaa; margin-bottom: 12px; font-size: 0.95rem;">Tus amigos solo tienen que hacer clic en el enlace para entrar desde cualquier navegador o móvil:</p>
+                            <button id="btn-copy-tunnel-link" onclick="navigator.clipboard.writeText('${fullLink}'); this.innerText='¡ENLACE COPIADO! ✓'; setTimeout(()=>this.innerText='📋 COPIAR ENLACE PARA DISCORD', 3000);" class="btn-pill btn-cyan" style="font-size: 1rem; padding: 10px 20px; cursor: pointer; font-weight: bold;">📋 COPIAR ENLACE PARA DISCORD</button>
+                        </div>
+                    `;
                 } else if (d.error) {
                     tunnelEl.innerHTML = `Error túnel: ${d.error} <br><button onclick="createMultiplayerRoom('${packName}')" class="btn-pill btn-white" style="margin-top:5px;font-size:0.75rem;">Reintentar túnel</button>`;
                 } else {
@@ -2887,16 +3005,31 @@ async function saveGeminiKeyFromModal() {
 }
 
 document.getElementById('btn-auto-create').onclick = async () => {
-    // Check if Gemini API key exists
-    try {
-        const rKey = await fetch('/api/check_gemini_key');
-        const dKey = await rKey.json();
-        if (!dKey.has_key) {
-            document.getElementById('gemini-key-modal').style.display = 'flex';
-            return;
+    const userApiKey = (document.getElementById('creator-gemini-key') ? document.getElementById('creator-gemini-key').value.trim() : '');
+    if (userApiKey) {
+        try {
+            await fetch('/api/save_gemini_key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: userApiKey })
+            });
+        } catch(e) {
+            console.warn("Could not save user Gemini key:", e);
         }
-    } catch(e) {
-        console.warn("Could not check gemini key:", e);
+    } else {
+        // Check if Gemini API key exists
+        try {
+            const rKey = await fetch('/api/check_gemini_key');
+            const dKey = await rKey.json();
+            if (!dKey.has_key) {
+                const modalKey = document.getElementById('gemini-key-modal');
+                if (modalKey) modalKey.style.display = 'flex';
+                else alert("Por favor, introduce tu Clave API de Google Gemini en la casilla para usar el Taller de Escenas.");
+                return;
+            }
+        } catch(e) {
+            console.warn("Could not check gemini key:", e);
+        }
     }
 
     const packName = document.getElementById('auto-pack-name').value.trim();

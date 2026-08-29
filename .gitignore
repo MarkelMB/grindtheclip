@@ -4,6 +4,10 @@ build/
 __pycache__/
 *.pyc
 cloudflared.exe
+uploads/
+python_embed/
+hooks/
+*.bat
 *.wav
 *.mp4
 !static/*.wav
