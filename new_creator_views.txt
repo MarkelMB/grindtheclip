@@ -1,0 +1,168 @@
+﻿
+    <!-- ========== TALLER DE ESCENAS ========== -->
+
+    <!-- VIEW: Creator Input -->
+    <div id="view-creator-input" class="view" style="width:100%;max-width:700px;margin:0 auto;text-align:center;padding-top:40px;">
+        <button onclick="showView('view-start')" class="btn-back-small">&#9664; Volver</button>
+        <h1 style="color:var(--cyan);margin-bottom:10px;">&#127916; TALLER DE ESCENAS</h1>
+        <p style="color:#aaa;margin-bottom:30px;">Sube un video o pega un enlace de YouTube. La IA detectara los personajes y transcribira el dialogo.</p>
+        <div class="creator-card" style="background:rgba(10,12,16,0.85);border:2px solid var(--monitor-border);padding:40px;border-radius:20px;">
+            <input type="text" id="auto-pack-name" placeholder="Nombre de la escena (ej. American Psycho Tarjetas)" style="width:100%;padding:15px;margin-bottom:25px;background:#1a202c;color:white;border:1px solid var(--cyan);border-radius:8px;font-size:1.1rem;text-align:center;box-sizing:border-box;">
+            <div style="display:flex;flex-direction:column;gap:15px;margin-bottom:25px;">
+                <label style="color:var(--cyan);font-weight:bold;text-align:left;">&#128193; Subir archivo de video:</label>
+                <input type="file" id="auto-video-upload" accept="video/mp4,video/mkv,video/webm" style="color:white;width:100%;">
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:25px;">
+                <div style="flex:1;height:1px;background:#444;"></div>
+                <span style="color:#666;font-weight:bold;">O</span>
+                <div style="flex:1;height:1px;background:#444;"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:15px;margin-bottom:30px;">
+                <label style="color:var(--magenta);font-weight:bold;text-align:left;">&#128279; Enlace de YouTube:</label>
+                <input type="text" id="auto-youtube-url" placeholder="https://www.youtube.com/watch?v=..." style="width:100%;padding:15px;background:#1a202c;color:white;border:1px solid var(--magenta);border-radius:8px;font-size:1rem;box-sizing:border-box;">
+            </div>
+            <button class="btn-pill" id="btn-auto-create" style="background:linear-gradient(135deg,#00e676,#00bcd4);font-size:1.3rem;padding:18px;width:100%;color:#000;font-weight:bold;">&#128640; CREAR ESCENA AUTOMATICAMENTE</button>
+        </div>
+    </div>
+
+    <!-- VIEW: Creator Processing -->
+    <div id="view-creator-processing" class="view" style="width:100%;max-width:600px;margin:0 auto;text-align:center;padding-top:80px;">
+        <div class="processing-spinner">
+            <div class="spinner-ring"></div>
+            <div class="spinner-ring spinner-ring-2"></div>
+            <div class="spinner-ring spinner-ring-3"></div>
+        </div>
+        <h2 id="processing-status-text" style="color:var(--cyan);margin-top:40px;">Preparando...</h2>
+        <div class="processing-progress-container" style="margin-top:25px;">
+            <div class="processing-progress-bar" id="processing-progress-bar"></div>
+        </div>
+        <p id="processing-percent" style="color:#888;margin-top:10px;font-size:1.2rem;">0%</p>
+        <p style="color:#555;margin-top:30px;font-size:0.9rem;">Esto puede tardar unos minutos dependiendo de la duracion del video.</p>
+    </div>
+
+    <!-- VIEW: Creator Editor -->
+    <div id="view-creator-editor" class="view" style="width:100vw;height:100vh;padding:0;overflow:hidden;background:#f5f6f8;display:flex;flex-direction:column;font-family:'Roboto',sans-serif;">
+
+        <!-- Top bar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:linear-gradient(to right,#9ca4ab,#ffffff);border-bottom:2px solid #00bcd4;flex-shrink:0;">
+            <div style="display:flex;align-items:center;gap:15px;">
+                <button onclick="exitEditor()" style="width:40px;height:40px;border-radius:50%;border:2px solid #fff;background:transparent;color:#fff;font-size:1.5rem;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 5px rgba(0,0,0,0.2);">&#8592;</button>
+                <input type="text" id="editor-pack-name" placeholder="Nombre de la escena" style="padding:10px 20px;border-radius:20px;border:1px solid #ccc;font-weight:bold;font-size:1.1rem;width:300px;color:#333;box-shadow:inset 0 1px 3px rgba(0,0,0,0.1);">
+                <span style="color:#fff;font-weight:bold;font-size:0.9rem;text-shadow:0 1px 2px rgba(0,0,0,0.3);">saved</span>
+            </div>
+            <div style="color:#666;font-size:0.9rem;font-weight:bold;">Choicer Voicer Dub Tool ver. 1.0.</div>
+        </div>
+
+        <!-- Main area -->
+        <div style="display:flex;flex:1;overflow:hidden;padding:15px 15px 10px 15px;gap:15px;min-height:0;">
+
+            <!-- Left: Video + Timeline -->
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0;gap:8px;">
+
+                <!-- Video -->
+                <div style="background:#000;border-radius:8px;overflow:hidden;flex-shrink:0;position:relative;max-height:42vh;display:flex;align-items:center;justify-content:center;border:1px solid #ccc;box-shadow:0 4px 10px rgba(0,0,0,0.1);">
+                    <button onclick="editorRemoveVideo()" style="position:absolute;top:12px;right:12px;background:#ffcdd2;color:#d32f2f;border:none;padding:6px 14px;border-radius:20px;font-weight:bold;cursor:pointer;z-index:10;font-size:0.85rem;box-shadow:0 2px 4px rgba(0,0,0,0.2);">Remove video</button>
+                    <video id="editor-video" controls style="width:100%;max-height:42vh;object-fit:contain;display:block;"></video>
+                </div>
+
+                <!-- Timeline toolbar -->
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;flex-shrink:0;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span style="font-size:0.82rem;color:#666;">Haz clic en el nombre de un personaje para seleccionarlo.</span>
+                        <button onclick="addLineAtPlayhead()" style="background:#e0f7fa;border:1px solid #00bcd4;border-radius:20px;padding:6px 15px;font-weight:bold;color:#00838f;cursor:pointer;font-size:0.88rem;box-shadow:0 2px 4px rgba(0,0,0,0.1);">+ Add line at playhead</button>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:0.85rem;color:#666;">Zoom</span>
+                        <input type="range" id="timeline-zoom" min="1" max="20" value="5" style="width:100px;accent-color:#00bcd4;">
+                    </div>
+                </div>
+
+                <!-- Timeline -->
+                <div id="editor-timeline-container" style="flex:1;background:#263238;border-radius:8px;border:1px solid #ccc;display:flex;flex-direction:column;overflow:hidden;position:relative;box-shadow:0 4px 10px rgba(0,0,0,0.15);min-height:0;">
+                    <div style="display:flex;flex:1;overflow:hidden;">
+                        <!-- Char labels fixed left -->
+                        <div id="timeline-chars-pane" style="width:120px;background:#263238;border-right:2px solid #37474f;flex-shrink:0;z-index:2;overflow:hidden;padding-top:25px;"></div>
+                        <!-- Scrollable ruler + tracks -->
+                        <div id="timeline-scroll-area" style="flex:1;overflow-x:auto;overflow-y:hidden;position:relative;">
+                            <div id="timeline-ruler" style="height:25px;background:#1c2529;border-bottom:1px solid #37474f;position:sticky;top:0;z-index:5;color:#888;font-size:0.7rem;"></div>
+                            <div id="timeline-tracks" style="position:relative;background:#202b30;min-height:150px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export footer bar -->
+                <div style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:0.85rem;color:#555;flex-shrink:0;flex-wrap:wrap;">
+                    <span>Export start (s)</span>
+                    <input type="text" id="export-start-input" value="0.00" style="width:60px;padding:5px;border:1px solid #ccc;border-radius:15px;text-align:center;background:#fff;">
+                    <button onclick="document.getElementById('export-start-input').value=document.getElementById('editor-video').currentTime.toFixed(2)" style="background:#fff;border:1px solid #00bcd4;border-radius:15px;padding:4px 10px;color:#00838f;cursor:pointer;">use playhead</button>
+                    <span style="margin-left:15px;">Export end (s)</span>
+                    <input type="text" id="export-end-input" value="0.00" style="width:60px;padding:5px;border:1px solid #ccc;border-radius:15px;text-align:center;background:#fff;">
+                    <button onclick="document.getElementById('export-end-input').value=document.getElementById('editor-video').currentTime.toFixed(2)" style="background:#fff;border:1px solid #00bcd4;border-radius:15px;padding:4px 10px;color:#00838f;cursor:pointer;">use playhead</button>
+                    <span style="margin-left:15px;" id="export-duration-text"></span>
+                </div>
+            </div>
+
+            <!-- Right Sidebar -->
+            <div style="width:195px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;overflow-y:auto;">
+
+                <!-- CHARACTERS -->
+                <div style="border:1px solid #00bcd4;border-radius:8px;padding:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                    <h4 style="color:#00bcd4;margin:0 0 12px 0;font-weight:bold;font-size:0.9rem;letter-spacing:1px;">CHARACTERS</h4>
+                    <div id="editor-sidebar-chars" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:220px;overflow-y:auto;"></div>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="new-char-name" placeholder="Character name" style="flex:1;padding:7px 10px;border:1px solid #ccc;border-radius:20px;font-size:0.85rem;min-width:0;">
+                        <button onclick="addCharacter()" style="background:#e0f7fa;border:1px solid #00bcd4;border-radius:20px;padding:7px 12px;color:#00838f;font-weight:bold;cursor:pointer;white-space:nowrap;">+ Add</button>
+                    </div>
+                </div>
+
+                <!-- PACK INFO -->
+                <div style="border:1px solid #00bcd4;border-radius:8px;padding:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                    <h4 style="color:#00bcd4;margin:0 0 12px 0;font-weight:bold;font-size:0.9rem;letter-spacing:1px;">PACK INFO</h4>
+                    <label style="display:block;font-size:0.8rem;color:#666;margin-bottom:4px;">Authors</label>
+                    <input type="text" id="pack-authors" placeholder="Your Name, Co-Author" style="width:100%;padding:7px 10px;border:1px solid #ccc;border-radius:6px;margin-bottom:12px;font-size:0.85rem;box-sizing:border-box;">
+                    <label style="display:block;font-size:0.8rem;color:#666;margin-bottom:4px;">Readme</label>
+                    <input type="text" id="pack-readme" placeholder="Shown in-game" style="width:100%;padding:7px 10px;border:1px solid #ccc;border-radius:6px;margin-bottom:12px;font-size:0.85rem;box-sizing:border-box;">
+                    <label style="display:block;font-size:0.8rem;color:#666;margin-bottom:4px;">Icon</label>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <button style="background:#f5f5f5;border:1px solid #ccc;border-radius:4px;padding:5px 8px;font-size:0.8rem;color:#333;cursor:pointer;">Seleccionar archivo</button>
+                        <span style="font-size:0.8rem;color:#999;">Ningun archivo seleccionado</span>
+                    </div>
+                </div>
+
+                <!-- EXPORT -->
+                <div style="border:1px solid #00bcd4;border-radius:8px;padding:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                    <h4 style="color:#00bcd4;margin:0 0 8px 0;font-weight:bold;font-size:0.9rem;letter-spacing:1px;">EXPORT</h4>
+                    <p style="font-size:0.75rem;color:#666;margin-bottom:12px;line-height:1.4;">dub_video.ogv always keeps original audio. _backing_track.mp3 gets dialogue removed with Demucs so it doesn't clash with your dub.</p>
+                    <button id="btn-export-pack" onclick="exportPack()" style="width:100%;background:linear-gradient(to bottom,#e0f7fa,#80deea);border:1px solid #00bcd4;border-radius:20px;padding:14px;color:#006064;font-size:1rem;font-weight:bold;cursor:pointer;margin-bottom:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);">Export pack</button>
+                    <div id="export-status" style="font-size:0.8rem;color:#555;text-align:center;display:none;margin-top:4px;"></div>
+                    <div style="height:10px;background:linear-gradient(to right,#00bcd4,#006064);border-radius:5px;width:100%;margin-top:6px;"></div>
+                </div>
+
+                <!-- LINE EDITOR (inline) -->
+                <div id="line-edit-panel-wrap" style="border:1px solid #ff7043;border-radius:8px;padding:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.05);display:none;">
+                    <h4 style="color:#ff7043;margin:0 0 10px 0;font-weight:bold;font-size:0.9rem;letter-spacing:1px;">EDIT LINE</h4>
+                    <label style="display:block;font-size:0.8rem;color:#666;margin-bottom:3px;">Personaje</label>
+                    <select id="line-edit-char" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px;margin-bottom:10px;font-size:0.85rem;color:#333;"></select>
+                    <label style="display:block;font-size:0.8rem;color:#666;margin-bottom:3px;">Transcripcion</label>
+                    <textarea id="line-edit-caption" rows="3" style="width:100%;padding:7px;border:1px solid #00bcd4;border-radius:6px;margin-bottom:10px;font-size:0.85rem;resize:vertical;box-sizing:border-box;"></textarea>
+                    <div style="display:flex;gap:6px;margin-bottom:10px;">
+                        <div style="flex:1;">
+                            <label style="display:block;font-size:0.75rem;color:#666;margin-bottom:3px;">Inicio (s)</label>
+                            <input type="number" step="0.01" id="line-edit-start" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="display:block;font-size:0.75rem;color:#666;margin-bottom:3px;">Fin (s)</label>
+                            <input type="number" step="0.01" id="line-edit-end" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button onclick="applyLineEdits()" style="flex:1;background:#e0f7fa;border:1px solid #00bcd4;border-radius:8px;padding:8px;color:#006064;font-weight:bold;cursor:pointer;font-size:0.85rem;">Aplicar</button>
+                        <button onclick="deleteSelectedLine()" style="flex:1;background:#ffcdd2;border:1px solid #ef9a9a;border-radius:8px;padding:8px;color:#d32f2f;font-weight:bold;cursor:pointer;font-size:0.85rem;">Eliminar</button>
+                    </div>
+                    <button onclick="deselectLine()" style="width:100%;margin-top:6px;background:#f5f5f5;border:1px solid #ccc;border-radius:8px;padding:6px;color:#555;cursor:pointer;font-size:0.8rem;">Cerrar</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+

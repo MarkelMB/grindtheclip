@@ -1,0 +1,11 @@
+.venv/
+dist/
+build/
+__pycache__/
+*.pyc
+cloudflared.exe
+*.wav
+*.mp4
+!static/*.wav
+!static/*.mp3
+!static/*.mp4

@@ -1,0 +1,522 @@
+﻿// ===========================================
+// EDITOR DE ESCENAS (TALLER DE ESCENAS)
+// ===========================================
+
+let creatorJobId = null;
+let creatorResult = null;
+let editorCharacters = [];
+let editorLines = [];
+let selectedLineId = null;
+let editorVideoUrl = null;
+let editorVideoDuration = 0;
+let timelineZoom = 5;
+const TRACK_LABEL_WIDTH = 130;
+let displayedProgress = 0;
+
+const CHAR_COLORS = ['#6c8cff','#e5636b','#4caf7d','#d9a441','#c471ed','#41c7d9','#ff7043','#66bb6a','#ab47bc','#5c6bc0'];
+
+// ---- NAVEGACION ----
+
+document.getElementById('btn-create-scene').onclick = () => {
+    showView('view-creator-input');
+};
+
+document.getElementById('btn-auto-create').onclick = async () => {
+    const packName = document.getElementById('auto-pack-name').value.trim();
+    const videoFile = document.getElementById('auto-video-upload').files[0];
+    const youtubeUrl = document.getElementById('auto-youtube-url').value.trim();
+
+    if (!packName) { alert('Escribe un nombre para la escena.'); return; }
+    if (!videoFile && !youtubeUrl) { alert('Sube un video o pega un enlace de YouTube.'); return; }
+
+    showView('view-creator-processing');
+
+    const formData = new FormData();
+    formData.append('pack_name', packName);
+    if (videoFile) formData.append('video', videoFile);
+    else formData.append('youtube_url', youtubeUrl);
+
+    try {
+        const res = await fetch('/api/creator/auto_build', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        creatorJobId = data.job_id;
+        displayedProgress = 0;
+        pollAutoProcessing();
+    } catch(e) {
+        alert('Error: ' + e.message);
+        showView('view-creator-input');
+    }
+};
+
+// ---- POLLING ----
+
+async function pollAutoProcessing() {
+    if (!creatorJobId) return;
+    try {
+        const res = await fetch('/api/creator/status/' + creatorJobId);
+        const data = await res.json();
+        const targetProgress = data.progress || 0;
+        const statusText = data.status || 'Procesando...';
+        document.getElementById('processing-status-text').innerText = statusText;
+        smoothProgressTo(targetProgress);
+
+        if (data.error) {
+            alert('Error durante el procesamiento: ' + data.status);
+            showView('view-creator-input');
+            displayedProgress = 0;
+            return;
+        }
+
+        if (data.progress >= 100) {
+            displayedProgress = 100;
+            document.getElementById('processing-progress-bar').style.width = '100%';
+            document.getElementById('processing-percent').innerText = '100%';
+
+            const resResult = await fetch('/api/creator/result/' + creatorJobId);
+            const resultData = await resResult.json();
+            if (resultData.error) throw new Error(resultData.error);
+
+            creatorResult = resultData;
+            editorVideoUrl = resultData.video_url || editorVideoUrl;
+            const editorData = resultData.result || resultData;
+            editorData.video_url = resultData.video_url;
+            openEditor(editorData);
+        } else {
+            setTimeout(pollAutoProcessing, 1200);
+        }
+    } catch(e) {
+        console.error('Polling error:', e);
+        setTimeout(pollAutoProcessing, 2000);
+    }
+}
+
+function smoothProgressTo(target) {
+    const bar = document.getElementById('processing-progress-bar');
+    const pct = document.getElementById('processing-percent');
+    if (!bar || !pct) return;
+    if (target <= displayedProgress) return;
+    const step = () => {
+        if (displayedProgress < target) {
+            displayedProgress = Math.min(displayedProgress + 1, target);
+            bar.style.width = displayedProgress + '%';
+            pct.innerText = displayedProgress + '%';
+            if (displayedProgress < target) setTimeout(step, 40);
+        }
+    };
+    step();
+}
+
+// ---- APERTURA DEL EDITOR ----
+
+function openEditor(data) {
+    editorLines = (data.lines || []).map(l => ({
+        id: l.id || (Math.random().toString(36).substr(2,9)),
+        character: l.character || 'Personaje 1',
+        caption: l.caption || '',
+        start: parseFloat(l.start) || 0,
+        end: parseFloat(l.end) || 0,
+    }));
+
+    // Build unique characters from lines
+    const uniqueChars = [...new Set(editorLines.map(l => l.character))];
+    editorCharacters = uniqueChars.map((name, i) => ({
+        name: name,
+        color: CHAR_COLORS[i % CHAR_COLORS.length]
+    }));
+
+    // Set pack name
+    const packNameInput = document.getElementById('editor-pack-name');
+    if (packNameInput) {
+        packNameInput.value = document.getElementById('auto-pack-name').value.trim() || 'Mi Escena';
+    }
+
+    // Load video
+    const videoUrl = data.video_url || editorVideoUrl;
+    const editorVideo = document.getElementById('editor-video');
+    if (videoUrl && editorVideo) {
+        editorVideo.src = videoUrl;
+        editorVideo.load();
+    }
+
+    if (editorVideo) {
+        editorVideo.onloadedmetadata = () => {
+            editorVideoDuration = editorVideo.duration;
+            renderTimeline();
+        };
+    }
+
+    // Fallback duration from lines
+    if (editorLines.length > 0) {
+        const maxEnd = Math.max(...editorLines.map(l => l.end || 0));
+        if (editorVideoDuration < maxEnd) editorVideoDuration = maxEnd + 5;
+    }
+    setTimeout(() => {
+        if (editorVideoDuration < 1) editorVideoDuration = 120;
+        renderTimeline();
+    }, 800);
+
+    // Zoom slider
+    const zoomSlider = document.getElementById('timeline-zoom');
+    if (zoomSlider) {
+        zoomSlider.value = timelineZoom;
+        zoomSlider.oninput = (e) => {
+            timelineZoom = parseInt(e.target.value);
+            renderTimeline();
+        };
+    }
+
+    // Horizontal scroll with mouse wheel
+    const scrollArea = document.getElementById('timeline-scroll-area');
+    if (scrollArea) {
+        scrollArea.addEventListener('wheel', (e) => {
+            if (e.deltaY !== 0) { scrollArea.scrollLeft += e.deltaY; e.preventDefault(); }
+        }, { passive: false });
+    }
+
+    // Sync playhead
+    if (editorVideo) {
+        editorVideo.ontimeupdate = () => updatePlayheadPosition();
+    }
+
+    selectedLineId = null;
+    showView('view-creator-editor');
+    renderCharactersPanel();
+    renderLinesList();
+    renderTimeline();
+}
+
+// ---- PLAYHEAD ----
+
+function updatePlayheadPosition() {
+    const video = document.getElementById('editor-video');
+    const ph = document.getElementById('timeline-playhead');
+    if (!video || !ph) return;
+    const pxPerSec = timelineZoom * 10;
+    ph.style.left = (video.currentTime * pxPerSec) + 'px';
+}
+
+// ---- SELECCION DE LINEA ----
+
+function selectLine(lineId) {
+    selectedLineId = lineId;
+    const line = editorLines.find(l => l.id === lineId);
+    if (!line) { deselectLine(); return; }
+
+    document.getElementById('no-line-selected').style.display = 'none';
+    document.getElementById('line-edit-panel').style.display = 'flex';
+
+    document.getElementById('line-edit-caption').value = line.caption;
+    document.getElementById('line-edit-start').value = line.start.toFixed(2);
+    document.getElementById('line-edit-end').value = line.end.toFixed(2);
+
+    // Jump video to line start
+    const video = document.getElementById('editor-video');
+    if (video && !isNaN(line.start)) video.currentTime = line.start;
+
+    updateCharacterSelect(line.character);
+    renderLinesList();
+    renderTimeline();
+}
+
+function deselectLine() {
+    selectedLineId = null;
+    document.getElementById('no-line-selected').style.display = 'block';
+    document.getElementById('line-edit-panel').style.display = 'none';
+}
+
+function applyLineEdits() {
+    if (!selectedLineId) return;
+    const line = editorLines.find(l => l.id === selectedLineId);
+    if (!line) return;
+
+    line.character = document.getElementById('line-edit-char').value;
+    line.caption = document.getElementById('line-edit-caption').value;
+    line.start = parseFloat(document.getElementById('line-edit-start').value) || 0;
+    line.end = parseFloat(document.getElementById('line-edit-end').value) || 0;
+
+    // If character not in list, add it
+    if (!editorCharacters.find(c => c.name === line.character)) {
+        editorCharacters.push({ name: line.character, color: CHAR_COLORS[editorCharacters.length % CHAR_COLORS.length] });
+        renderCharactersPanel();
+    }
+
+    renderLinesList();
+    renderTimeline();
+}
+
+// ---- GESTION DE LINEAS ----
+
+function addLineAtPlayhead() {
+    const video = document.getElementById('editor-video');
+    const currentTime = video ? video.currentTime : 0;
+    const charName = editorCharacters.length > 0 ? editorCharacters[0].name : 'Personaje 1';
+
+    const newLine = {
+        id: Math.random().toString(36).substr(2,9),
+        character: charName,
+        caption: 'Nuevo dialogo',
+        start: Math.round(currentTime * 100) / 100,
+        end: Math.round((currentTime + 3) * 100) / 100
+    };
+    editorLines.push(newLine);
+    editorLines.sort((a, b) => a.start - b.start);
+    selectLine(newLine.id);
+    renderLinesList();
+    renderTimeline();
+}
+
+function deleteSelectedLine() {
+    if (!selectedLineId) return;
+    if (!confirm('Eliminar esta linea?')) return;
+    editorLines = editorLines.filter(l => l.id !== selectedLineId);
+    deselectLine();
+    renderLinesList();
+    renderTimeline();
+}
+
+function renderLinesList() {
+    const container = document.getElementById('editor-lines-list');
+    const counter = document.getElementById('lines-count');
+    if (!container) return;
+    if (counter) counter.textContent = editorLines.length;
+
+    container.innerHTML = '';
+    const sorted = [...editorLines].sort((a, b) => a.start - b.start);
+    sorted.forEach(line => {
+        const ch = editorCharacters.find(c => c.name === line.character);
+        const color = ch ? ch.color : '#666';
+        const isSelected = line.id === selectedLineId;
+        const el = document.createElement('div');
+        el.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;border:1px solid ${isSelected ? '#00bcd4' : '#1e3040'};background:${isSelected ? '#1a2f3a' : '#0d1117'};`;
+        el.innerHTML = `
+            <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:0.7rem;color:#546e7a;">${line.character} · ${line.start.toFixed(1)}s - ${line.end.toFixed(1)}s</div>
+                <div style="font-size:0.8rem;color:#cfd8dc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line.caption || '(sin texto)'}</div>
+            </div>
+            <button onclick="event.stopPropagation();deleteLineById('${line.id}')" style="background:none;border:none;color:#546e7a;cursor:pointer;font-size:0.9rem;padding:2px 4px;">&#10005;</button>
+        `;
+        el.onclick = () => selectLine(line.id);
+        container.appendChild(el);
+    });
+}
+
+function deleteLineById(id) {
+    editorLines = editorLines.filter(l => l.id !== id);
+    if (selectedLineId === id) deselectLine();
+    renderLinesList();
+    renderTimeline();
+}
+
+// ---- GESTION DE PERSONAJES ----
+
+function renderCharactersPanel() {
+    const container = document.getElementById('editor-sidebar-chars');
+    if (!container) return;
+    container.innerHTML = '';
+    editorCharacters.forEach((ch, i) => {
+        const el = document.createElement('div');
+        el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 0;';
+        el.innerHTML = `
+            <div style="width:10px;height:10px;border-radius:50%;background:${ch.color};flex-shrink:0;"></div>
+            <input type="text" value="${ch.name}" style="flex:1;background:#1a2233;border:1px solid #263238;border-radius:6px;padding:4px 8px;color:#fff;font-size:0.85rem;" onchange="renameCharacter(${i}, this.value)">
+            <button onclick="removeCharacter(${i})" style="background:none;border:none;color:#546e7a;cursor:pointer;font-size:0.9rem;">&#10005;</button>
+        `;
+        container.appendChild(el);
+    });
+    updateCharacterSelect();
+}
+
+function addCharacter() {
+    const name = document.getElementById('new-char-name').value.trim();
+    if (!name) return;
+    if (editorCharacters.find(c => c.name === name)) { alert('Ese personaje ya existe.'); return; }
+    editorCharacters.push({ name: name, color: CHAR_COLORS[editorCharacters.length % CHAR_COLORS.length] });
+    document.getElementById('new-char-name').value = '';
+    renderCharactersPanel();
+    renderTimeline();
+}
+
+function removeCharacter(idx) {
+    const name = editorCharacters[idx].name;
+    const hasLines = editorLines.some(l => l.character === name);
+    if (hasLines && !confirm(`El personaje "${name}" tiene ${editorLines.filter(l=>l.character===name).length} lineas asignadas. Eliminar de todas formas?`)) return;
+    editorCharacters.splice(idx, 1);
+    renderCharactersPanel();
+    renderTimeline();
+}
+
+function renameCharacter(idx, newName) {
+    const oldName = editorCharacters[idx].name;
+    editorCharacters[idx].name = newName;
+    // Update all lines that had the old name
+    editorLines.forEach(l => { if (l.character === oldName) l.character = newName; });
+    renderCharactersPanel();
+    renderLinesList();
+    renderTimeline();
+}
+
+function updateCharacterSelect(selectedChar) {
+    const sel = document.getElementById('line-edit-char');
+    if (!sel) return;
+    sel.innerHTML = '';
+    editorCharacters.forEach(ch => {
+        const opt = document.createElement('option');
+        opt.value = ch.name;
+        opt.textContent = ch.name;
+        if (selectedChar && ch.name === selectedChar) opt.selected = true;
+        sel.appendChild(opt);
+    });
+    // Allow typing a new character name
+    if (selectedChar && !editorCharacters.find(c => c.name === selectedChar)) {
+        const opt = document.createElement('option');
+        opt.value = selectedChar;
+        opt.textContent = selectedChar + ' (nuevo)';
+        opt.selected = true;
+        sel.appendChild(opt);
+    }
+}
+
+function getCharColor(charName) {
+    const ch = editorCharacters.find(c => c.name === charName);
+    return ch ? ch.color : '#607d8b';
+}
+
+// ---- TIMELINE ----
+
+function renderTimeline() {
+    const scrollArea = document.getElementById('timeline-scroll-area');
+    const ruler = document.getElementById('timeline-ruler');
+    const tracks = document.getElementById('timeline-tracks');
+    const charsPane = document.getElementById('timeline-chars-pane');
+    if (!ruler || !tracks || !charsPane || !scrollArea) return;
+
+    const pxPerSec = timelineZoom * 10;
+    const totalWidth = Math.max(editorVideoDuration * pxPerSec, 800);
+
+    // Ruler
+    ruler.innerHTML = '';
+    ruler.style.width = totalWidth + 'px';
+    ruler.style.minWidth = totalWidth + 'px';
+    const interval = pxPerSec >= 50 ? 1 : pxPerSec >= 20 ? 5 : 10;
+    for (let t = 0; t <= editorVideoDuration; t += interval) {
+        const mark = document.createElement('div');
+        mark.style.cssText = `position:absolute;left:${t*pxPerSec}px;top:0;height:100%;border-left:1px solid #1e3040;padding-left:3px;font-size:0.62rem;color:#546e7a;user-select:none;`;
+        const mins = Math.floor(t / 60);
+        const secs = Math.floor(t % 60);
+        mark.textContent = `${mins}:${secs.toString().padStart(2,'0')}`;
+        ruler.appendChild(mark);
+    }
+
+    ruler.onclick = (e) => {
+        const rect = ruler.getBoundingClientRect();
+        const time = Math.max(0, (e.clientX - rect.left + scrollArea.scrollLeft) / pxPerSec);
+        const video = document.getElementById('editor-video');
+        if (video) video.currentTime = time;
+    };
+
+    // Tracks
+    tracks.innerHTML = '';
+    tracks.style.width = totalWidth + 'px';
+    tracks.style.minWidth = totalWidth + 'px';
+
+    // Playhead
+    const ph = document.createElement('div');
+    ph.id = 'timeline-playhead';
+    ph.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;background:#00e5ff;z-index:10;pointer-events:none;box-shadow:0 0 8px #00e5ff;';
+    ph.style.left = '0px';
+    tracks.appendChild(ph);
+
+    charsPane.innerHTML = '';
+
+    // Create a track for every character
+    const charsToShow = editorCharacters.length > 0 ? editorCharacters : [{ name: 'Sin personaje', color: '#607d8b' }];
+    charsToShow.forEach((ch) => {
+        const charLabel = document.createElement('div');
+        charLabel.style.cssText = `height:44px;display:flex;align-items:center;padding:0 8px;border-bottom:1px solid #1e3040;gap:6px;`;
+        charLabel.innerHTML = `<div style="width:8px;height:8px;border-radius:50%;background:${ch.color};flex-shrink:0;"></div><span style="font-size:0.75rem;color:#b0bec5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ch.name}</span>`;
+        charsPane.appendChild(charLabel);
+
+        const track = document.createElement('div');
+        track.style.cssText = `height:44px;position:relative;border-bottom:1px solid #1a2030;`;
+
+        const charLines = editorLines.filter(l => l.character === ch.name);
+        charLines.forEach(line => {
+            const left = line.start * pxPerSec;
+            const width = Math.max((line.end - line.start) * pxPerSec, 20);
+            const isSelected = line.id === selectedLineId;
+
+            const el = document.createElement('div');
+            el.style.cssText = `position:absolute;left:${left}px;width:${width}px;top:6px;height:32px;background:${ch.color};border-radius:6px;color:#000;font-size:0.68rem;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:32px;padding:0 8px;cursor:pointer;box-shadow:${isSelected ? '0 0 0 2px #fff,0 0 12px rgba(255,255,255,0.5)' : '0 2px 4px rgba(0,0,0,0.4)'};opacity:0.92;transition:opacity 0.1s;`;
+            el.title = line.caption;
+            el.textContent = line.caption || '(vacio)';
+
+            el.onclick = (e) => { e.stopPropagation(); selectLine(line.id); };
+            el.onmouseover = () => el.style.opacity = '1';
+            el.onmouseout = () => el.style.opacity = '0.92';
+            track.appendChild(el);
+        });
+
+        tracks.appendChild(track);
+    });
+}
+
+// ---- SALIR DEL EDITOR ----
+
+function exitEditor() {
+    if (editorLines.length > 0) {
+        if (!confirm('Seguro que quieres salir? Los cambios no guardados se perderan.')) return;
+    }
+    showView('view-start');
+    selectedLineId = null;
+    editorLines = [];
+    editorCharacters = [];
+    deselectLine();
+}
+
+// ---- EXPORTAR ----
+
+async function exportPack() {
+    const packNameEl = document.getElementById('editor-pack-name');
+    const packName = packNameEl ? packNameEl.value.trim() : '';
+    if (!packName) { alert('Escribe un nombre para la escena.'); return; }
+    if (editorLines.length === 0) { alert('No hay lineas de dialogo para exportar.'); return; }
+    if (!creatorJobId) { alert('Error: no hay un trabajo de procesamiento activo. Vuelve a crear la escena.'); return; }
+
+    const statusEl = document.getElementById('export-status');
+    const setBtn = (txt, disabled) => {
+        ['btn-export-pack','btn-export-pack-bottom'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) { b.textContent = txt; b.disabled = disabled; }
+        });
+    };
+    setBtn('Exportando...', true);
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Procesando el pack...'; }
+
+    try {
+        const res = await fetch('/api/creator/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                job_id: creatorJobId,
+                pack_name: packName,
+                lines: editorLines,
+                characters: editorCharacters
+            })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        if (statusEl) statusEl.textContent = 'Pack creado con exito!';
+        setBtn('Exportado!', false);
+        setTimeout(() => {
+            alert('La escena "' + packName + '" se ha creado correctamente. Ya puedes jugarla desde el catalogo de escenas.');
+            setBtn('Exportar Escena', false);
+            showView('view-packs');
+        }, 1000);
+    } catch(e) {
+        if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+        setBtn('Exportar Escena', false);
+        alert('Error al exportar: ' + e.message);
+    }
+}

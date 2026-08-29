@@ -1,0 +1,10 @@
+flask
+flask-socketio
+numpy
+librosa
+soundfile
+faster-whisper
+yt-dlp
+imageio-ffmpeg
+demucs
+cryptography
