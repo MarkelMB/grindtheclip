@@ -5,9 +5,5 @@ eventlet
 numpy
 librosa
 soundfile
-faster-whisper
-yt-dlp
 imageio-ffmpeg
-demucs
-cryptography
 requests
