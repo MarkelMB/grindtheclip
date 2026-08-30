@@ -2725,22 +2725,22 @@ def launch_desktop_window():
     webbrowser.open(url)
 
 if __name__ == '__main__':
-    use_gui = '--no-gui' not in sys.argv
+    port = int(os.environ.get('PORT', 5000))
+    use_gui = '--no-gui' not in sys.argv and not IS_CLOUD
     if use_gui:
         server_thread = threading.Thread(
             target=socketio.run,
             args=(app,),
-            kwargs={'host': '0.0.0.0', 'port': 5000, 'debug': False, 'allow_unsafe_werkzeug': True},
+            kwargs={'host': '0.0.0.0', 'port': port, 'debug': False, 'allow_unsafe_werkzeug': True},
             daemon=True
         )
         server_thread.start()
         time.sleep(1.0)
         launch_desktop_window()
-        # Keep main thread alive if using Edge/webbrowser
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
             sys.exit(0)
     else:
-        socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+        socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
