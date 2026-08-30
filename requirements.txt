@@ -1,7 +1,6 @@
 flask
 flask-socketio
 gunicorn
-eventlet
 numpy
 librosa
 soundfile
