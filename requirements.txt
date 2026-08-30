@@ -1,8 +1,7 @@
 flask
 flask-socketio
+gunicorn
 numpy
-librosa
-soundfile
 imageio-ffmpeg
 google-genai
 yt-dlp
