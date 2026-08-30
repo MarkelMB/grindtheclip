@@ -182,6 +182,10 @@ def compute_score(ref_y, user_y, sr, n_mfcc=8):
     
     return unclamped, metric_a, metric_b, metric_c
 
+@app.route('/health')
+def health_check():
+    return "OK", 200
+
 @app.route('/api/register', methods=['POST'])
 def api_register():
     try:
