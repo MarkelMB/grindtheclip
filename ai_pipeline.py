@@ -48,22 +48,16 @@ def set_gemini_api_key(key):
         pass
     return True
 
-# Gemini Client Setup
-GEMINI_AVAILABLE = False
-client = None
-
-try:
-    from google import genai
-    from google.genai import types
-    gemini_key = get_gemini_api_key()
-    if gemini_key:
-        client = genai.Client(api_key=gemini_key)
-        GEMINI_AVAILABLE = True
-        logging.info("Gemini SDK cargado correctamente.")
-    else:
-        logging.warning("GEMINI_API_KEY no configurada.")
-except Exception as e:
-    logging.warning(f"Error inicializando Gemini SDK: {e}")
+# Gemini Client Setup (Lazy loading)
+def get_gemini_client():
+    try:
+        from google import genai
+        gemini_key = get_gemini_api_key()
+        if gemini_key:
+            return genai.Client(api_key=gemini_key)
+    except Exception as e:
+        logging.warning(f"Error inicializando Gemini SDK: {e}")
+    return None
 
 def extract_audio_from_video(video_path, output_audio_path):
     ffmpeg_exe = get_ffmpeg_exe()
