@@ -1,5 +1,6 @@
 flask
 flask-socketio
+simple-websocket
 gunicorn
 numpy
 imageio-ffmpeg
