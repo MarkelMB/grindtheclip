@@ -41,8 +41,8 @@
             <!-- Login Form -->
             <form id="auth-form-login" onsubmit="handleAuthSubmit(event, 'login')" style="display: flex; flex-direction: column; gap: 16px;">
                 <div style="text-align: left;">
-                    <label style="color: #bbb; font-size: 0.85rem; display: block; margin-bottom: 5px;">Correo electrónico:</label>
-                    <input type="email" id="login-email" required placeholder="tu@email.com" style="width: 100%; padding: 12px 14px; background: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-size: 1rem;">
+                    <label style="color: #bbb; font-size: 0.85rem; display: block; margin-bottom: 5px;">Nombre de usuario:</label>
+                    <input type="text" id="login-username" required placeholder="Tu nombre de usuario" style="width: 100%; padding: 12px 14px; background: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-size: 1rem;">
                 </div>
                 <div style="text-align: left;">
                     <label style="color: #bbb; font-size: 0.85rem; display: block; margin-bottom: 5px;">Contraseña:</label>
@@ -55,16 +55,12 @@
             <form id="auth-form-register" onsubmit="handleAuthSubmit(event, 'register')" style="display: none; flex-direction: column; gap: 16px;">
                 <div style="text-align: left;">
                     <label style="color: #bbb; font-size: 0.85rem; display: block; margin-bottom: 5px;">Nick de jugador (Público):</label>
-                    <input type="text" id="reg-nickname" required placeholder="Ej: DubMaster99" oninput="liveCheckNickname(this.value)" maxlength="16" style="width: 100%; padding: 12px 14px; background: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-size: 1rem;">
-                    <div id="nick-validation-msg" style="font-size: 0.78rem; margin-top: 5px; color: #888;">⚠️ 3-16 caracteres (solo letras, números, _ y -)</div>
-                </div>
-                <div style="text-align: left;">
-                    <label style="color: #bbb; font-size: 0.85rem; display: block; margin-bottom: 5px;">Correo electrónico:</label>
-                    <input type="email" id="reg-email" required placeholder="tu@email.com" style="width: 100%; padding: 12px 14px; background: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-size: 1rem;">
+                    <input type="text" id="reg-nickname" required placeholder="Ej: DubMaster99" maxlength="16" style="width: 100%; padding: 12px 14px; background: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-size: 1rem;">
+                    <div id="nick-validation-msg" style="font-size: 0.78rem; margin-top: 5px; color: #888;">⚠️ 3-16 caracteres</div>
                 </div>
                 <div style="text-align: left;">
                     <label style="color: #bbb; font-size: 0.85rem; display: block; margin-bottom: 5px;">Contraseña:</label>
-                    <input type="password" id="reg-password" required minlength="6" placeholder="Mínimo 6 caracteres" style="width: 100%; padding: 12px 14px; background: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-size: 1rem;">
+                    <input type="password" id="reg-password" required minlength="4" placeholder="Mínimo 4 caracteres" style="width: 100%; padding: 12px 14px; background: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-size: 1rem;">
                 </div>
                 <button type="submit" id="btn-auth-register" class="btn-pill btn-magenta" style="width: 100%; padding: 14px; font-size: 1.1rem; font-weight: bold; margin-top: 10px;">Crear Cuenta 🚀</button>
             </form>

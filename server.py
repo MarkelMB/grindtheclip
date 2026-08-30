@@ -24,7 +24,11 @@ except Exception as _e:
 import io
 import shutil
 from werkzeug.utils import secure_filename
-import ai_pipeline
+try:
+    import ai_pipeline
+except Exception as _ai_err:
+    print(f'[Warning] ai_pipeline import error: {_ai_err}')
+    ai_pipeline = None
 
 warnings.filterwarnings('ignore', category=UserWarning)
 
@@ -35,6 +39,7 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024 # 500 MB max
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['SECRET_KEY'] = 'grindtheclip_secret'
 socketio = SocketIO(app, cors_allowed_origins="*")
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 
 # ==============================================================================
 # ROOM & STATE MANAGER (Re-architected Modular Room State)
@@ -87,14 +92,43 @@ class RoomManager:
 room_mgr = RoomManager()
 rooms = room_mgr.rooms
 
-user_appdata = os.getenv('APPDATA') or os.path.expanduser('~')
-PACKS_DIR = os.path.join(user_appdata, 'YeahMaybe', 'ChoicerVoicer', 'game', 'packs_voice')
+# Detect cloud environment (Render sets RENDER=true)
+IS_CLOUD = os.getenv('RENDER') or os.getenv('PORT')
+if IS_CLOUD:
+    PACKS_DIR = os.path.join(os.path.dirname(__file__), 'packs_voice')
+else:
+    user_appdata = os.getenv('APPDATA') or os.path.expanduser('~')
+    PACKS_DIR = os.path.join(user_appdata, 'YeahMaybe', 'ChoicerVoicer', 'game', 'packs_voice')
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
+USERS_DIR = os.path.join(os.path.dirname(__file__), 'data', 'users')
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(PACKS_DIR, exist_ok=True)
+os.makedirs(USERS_DIR, exist_ok=True)
 
 # Store global progress for jobs
 creator_jobs = {}
+
+import hashlib
+
+def hash_password(password):
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def get_user(username):
+    safe = secure_filename(username.lower())
+    user_file = os.path.join(USERS_DIR, f'{safe}.json')
+    if os.path.exists(user_file):
+        try:
+            with open(user_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+def save_user(user_data):
+    safe = secure_filename(user_data['username'].lower())
+    user_file = os.path.join(USERS_DIR, f'{safe}.json')
+    with open(user_file, 'w', encoding='utf-8') as f:
+        json.dump(user_data, f, ensure_ascii=False, indent=2)
 
 def extract_features(y, sr, n_mfcc=8):
     if librosa is None:
@@ -147,6 +181,49 @@ def compute_score(ref_y, user_y, sr, n_mfcc=8):
     unclamped = min(100, int(round(score)))
     
     return unclamped, metric_a, metric_b, metric_c
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    try:
+        data = request.get_json() or {}
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        if not username or not password:
+            return jsonify({'error': 'Usuario y contraseña requeridos'}), 400
+        if len(username) < 3:
+            return jsonify({'error': 'El nombre debe tener al menos 3 caracteres'}), 400
+        if len(password) < 4:
+            return jsonify({'error': 'La contraseña debe tener al menos 4 caracteres'}), 400
+        existing = get_user(username)
+        if existing:
+            return jsonify({'error': 'Ese nombre de usuario ya existe'}), 409
+        user_data = {
+            'username': username,
+            'password_hash': hash_password(password),
+            'gemini_api_key': '',
+            'created_at': time.strftime('%Y-%m-%dT%H:%M:%S')
+        }
+        save_user(user_data)
+        return jsonify({'success': True, 'username': username})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    try:
+        data = request.get_json() or {}
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        if not username or not password:
+            return jsonify({'error': 'Usuario y contraseña requeridos'}), 400
+        user = get_user(username)
+        if not user:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+        if user['password_hash'] != hash_password(password):
+            return jsonify({'error': 'Contraseña incorrecta'}), 401
+        return jsonify({'success': True, 'username': user['username']})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
@@ -220,20 +297,32 @@ def api_editor_load_media():
 
 @app.route('/api/check_gemini_key', methods=['GET'])
 def check_gemini_key():
-    key = ai_pipeline.get_gemini_api_key()
-    return jsonify({"has_key": bool(key)})
+    username = request.args.get('username', '').strip()
+    if username:
+        user = get_user(username)
+        if user and user.get('gemini_api_key'):
+            return jsonify({'has_key': True})
+    key = ai_pipeline.get_gemini_api_key() if ai_pipeline else ''
+    return jsonify({'has_key': bool(key)})
 
 @app.route('/api/save_gemini_key', methods=['POST'])
 def save_gemini_key():
     try:
         data = request.get_json() or {}
         key = data.get('api_key', '').strip()
+        username = data.get('username', '').strip()
         if key:
-            ai_pipeline.set_gemini_api_key(key)
-            return jsonify({"success": True, "message": "Clave API guardada correctamente"})
-        return jsonify({"error": "Clave API inválida"}), 400
+            if ai_pipeline:
+                ai_pipeline.set_gemini_api_key(key)
+            if username:
+                user = get_user(username)
+                if user:
+                    user['gemini_api_key'] = key
+                    save_user(user)
+            return jsonify({'success': True, 'message': 'Clave API guardada correctamente'})
+        return jsonify({'error': 'Clave API inválida'}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 CREATOR_PROJECTS = {}
 PROJECTS_DIR = os.path.join(UPLOADS_DIR, "projects")

@@ -8,8 +8,14 @@ uploads/
 python_embed/
 hooks/
 *.bat
-*.wav
-*.mp4
-!static/*.wav
-!static/*.mp3
-!static/*.mp4
+supabase_config.json
+gemini_config.json
+data/
+
+# Test files
+test.*
+test_*
+
+# Allow all files in packs_voice and static
+!packs_voice/**
+!static/**

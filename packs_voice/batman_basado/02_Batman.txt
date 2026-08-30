@@ -1,0 +1,6 @@
+[data]
+
+caption="Justice!"
+image="02_Batman.png"
+dub_timestamps=[7.833]
+dub_characters=["Batman"]

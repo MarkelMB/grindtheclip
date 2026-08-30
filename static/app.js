@@ -142,104 +142,56 @@ async function handleAuthSubmit(event, type) {
     if (succBanner) succBanner.style.display = 'none';
 
     if (type === 'register') {
-        const nickInput = document.getElementById('reg-nickname').value;
-        const email = document.getElementById('reg-email').value.trim().toLowerCase();
+        const nickname = document.getElementById('reg-nickname').value.trim();
         const password = document.getElementById('reg-password').value;
 
-        const valRes = validateNickname(nickInput);
-        if (!valRes.valid) {
-            if (errBanner) {
-                errBanner.innerText = valRes.error;
-                errBanner.style.display = 'block';
-            }
+        if (nickname.length < 3) {
+            if (errBanner) { errBanner.innerText = 'El nick debe tener al menos 3 caracteres'; errBanner.style.display = 'block'; }
             return;
         }
-        const nickname = valRes.nickname;
 
-        if (supabaseClient) {
-            try {
-                const { data, error } = await supabaseClient.auth.signUp({
-                    email: email,
-                    password: password,
-                    options: { data: { nickname: nickname } }
-                });
-                if (error) throw error;
-
-                currentUser = data.user;
-                currentUserProfile = { nickname: nickname, email: email };
-                saveLocalUserSession(currentUserProfile);
-                setLoggedInUser(currentUserProfile);
-            } catch (err) {
-                if (errBanner) {
-                    errBanner.innerText = `Error al registrarse: ${err.message}`;
-                    errBanner.style.display = 'block';
-                }
+        try {
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: nickname, password: password })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                if (errBanner) { errBanner.innerText = data.error || 'Error al registrarse'; errBanner.style.display = 'block'; }
                 return;
             }
-        } else {
-            saveLocalAccount(email, password, nickname);
-            currentUserProfile = { nickname: nickname, email: email };
+            currentUserProfile = { nickname: data.username };
             saveLocalUserSession(currentUserProfile);
             setLoggedInUser(currentUserProfile);
+            if (succBanner) { succBanner.innerText = `¡Cuenta creada! Bienvenido, ${data.username}.`; succBanner.style.display = 'block'; }
+            setTimeout(() => showView('view-start'), 400);
+        } catch(err) {
+            if (errBanner) { errBanner.innerText = 'Error de conexión al servidor'; errBanner.style.display = 'block'; }
         }
-
-        if (succBanner) {
-            succBanner.innerText = `¡Cuenta creada con éxito! Bienvenido, ${nickname}.`;
-            succBanner.style.display = 'block';
-        }
-        setTimeout(() => {
-            showView('view-start');
-        }, 400);
 
     } else if (type === 'login') {
-        const email = document.getElementById('login-email').value.trim().toLowerCase();
+        const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
 
-        if (supabaseClient) {
-            try {
-                const { data, error } = await supabaseClient.auth.signInWithPassword({
-                    email: email,
-                    password: password
-                });
-                if (error) throw error;
-
-                currentUser = data.user;
-                const metaNick = (data.user && data.user.user_metadata && data.user.user_metadata.nickname) ? data.user.user_metadata.nickname : email.split('@')[0];
-                const cleanNick = validateNickname(metaNick).valid ? metaNick : 'Jugador';
-                currentUserProfile = { nickname: cleanNick, email: email };
-                saveLocalUserSession(currentUserProfile);
-                setLoggedInUser(currentUserProfile);
-            } catch (err) {
-                if (errBanner) {
-                    errBanner.innerText = `Error al iniciar sesión: ${err.message}`;
-                    errBanner.style.display = 'block';
-                }
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username: username, password: password })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                if (errBanner) { errBanner.innerText = data.error || 'Error al iniciar sesión'; errBanner.style.display = 'block'; }
                 return;
             }
-        } else {
-            // Local mode: check stored account
-            const localAccount = getLocalAccount(email);
-            if (localAccount) {
-                if (localAccount.password && localAccount.password !== password) {
-                    if (errBanner) {
-                        errBanner.innerText = 'Contraseña incorrecta.';
-                        errBanner.style.display = 'block';
-                    }
-                    return;
-                }
-                currentUserProfile = { nickname: localAccount.nickname, email: email };
-            } else {
-                if (errBanner) {
-                    errBanner.innerText = 'Este usuario/correo no está registrado. Por favor, haz clic en Registrase primero.';
-                    errBanner.style.display = 'block';
-                }
-                return;
-            }
+            currentUserProfile = { nickname: data.username };
             saveLocalUserSession(currentUserProfile);
             setLoggedInUser(currentUserProfile);
+            showView('view-start');
+        } catch(err) {
+            if (errBanner) { errBanner.innerText = 'Error de conexión al servidor'; errBanner.style.display = 'block'; }
         }
-
-        showView('view-start');
     }
 }
 

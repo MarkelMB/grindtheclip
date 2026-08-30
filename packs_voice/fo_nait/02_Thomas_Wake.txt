@@ -1,0 +1,6 @@
+[data]
+
+caption="risa"
+image="02_Thomas_Wake.png"
+dub_timestamps=[3.52]
+dub_characters=["Thomas Wake"]
