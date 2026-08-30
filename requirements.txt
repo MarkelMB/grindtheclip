@@ -1,5 +1,5 @@
-flask
-flask-socketio
-simple-websocket
-gunicorn
-requests
+flask==3.0.3
+flask-socketio==5.3.6
+simple-websocket==1.0.0
+gunicorn==22.0.0
+requests==2.31.0
