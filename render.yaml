@@ -5,7 +5,7 @@ services:
     region: frankfurt
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python server.py --no-gui
+    startCommand: python run_server.py
     healthCheckPath: /health
     envVars:
       - key: SECRET_KEY
