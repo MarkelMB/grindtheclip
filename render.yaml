@@ -8,6 +8,6 @@ services:
     startCommand: python server.py --no-gui
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.8
+        value: 3.11
       - key: SECRET_KEY
         generateValue: true
