@@ -14,12 +14,12 @@ try:
 except Exception:
     pass
 
-try:
-    import imageio_ffmpeg
-    os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
-    os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
-except Exception:
-    pass
+def get_ffmpeg_exe():
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
 
 CONFIG_GEMINI_FILE = os.path.join(os.path.dirname(__file__), "gemini_config.json")
 
@@ -66,7 +66,7 @@ except Exception as e:
     logging.warning(f"Error inicializando Gemini SDK: {e}")
 
 def extract_audio_from_video(video_path, output_audio_path):
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_exe = get_ffmpeg_exe()
     cmd = [
         ffmpeg_exe, "-y", "-i", video_path, 
         "-q:a", "0", "-map", "a", output_audio_path
