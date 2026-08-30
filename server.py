@@ -37,8 +37,13 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024 # 500 MB max
 # Keep default=0 so we control caching explicitly per-route (socket.io must NOT be cached)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
-app.config['SECRET_KEY'] = 'grindtheclip_secret'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+try:
+    import gevent
+    async_mode_str = "gevent"
+except Exception:
+    async_mode_str = "threading"
+
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode_str)
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 
 # ==============================================================================
